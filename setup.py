@@ -5,14 +5,14 @@ __VERSION__ = environ.get('VBUILD') or '2025.3.0'
 
 
 setup(
-    name='millegrilles_filehost_python',
+    name='millegrilles_datasourcemapper',
     version=__VERSION__,
     packages=find_packages(),
-    url='https://github.com/dugrema/millegrilles.filehost.python',
+    url='https://github.com/dugrema/millegrilles.datasource_mapper.python',
     license='AFFERO',
     author='Mathieu Dugre',
     author_email='mathieu.dugre@mdugre.info',
-    description='Base web pour les applictions MilleGrilles avec client',
+    description='Datasource mapper in Python for Millegrilles',
     install_requires=[
         'pytz>=2020.4',
         'aiohttp>=3.8.1,<4',
