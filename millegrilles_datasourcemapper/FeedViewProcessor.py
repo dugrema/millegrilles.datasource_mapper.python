@@ -1,36 +1,23 @@
 import asyncio
-import binascii
 import datetime
 import logging
 import json
 import gzip
 import math
 import pathlib
-import struct
 import tempfile
 import zlib
 
 from typing import Optional, Union
 
+from millegrilles_datasourcemapper.DataStructures import ProcessJob
+from millegrilles_datasourcemapper.FeedDataProcessor import select_data_processor
 from millegrilles_datasourcemapper.Util import decode_base64_nopad
 from millegrilles_messages.chiffrage.DechiffrageUtils import dechiffrer_document, dechiffrer_reponse, \
     dechiffrer_bytes_secrete
 from millegrilles_messages.messages import Constantes
 from millegrilles_datasourcemapper.Context import DatasourceMapperContext
 from millegrilles_messages.messages.MessagesModule import MessageWrapper
-
-
-class ProcessJob:
-
-    def __init__(self, message: MessageWrapper):
-        self.message = message
-        self.feed: Optional[dict] = None
-        self.view: Optional[dict] = None
-        self.decrypted_view_information: Optional[dict] = None
-        self.encryption_key_id: Optional[str] = None
-        self.encryption_key_str: Optional[str] = None
-        self.encryption_key: Optional[bytes] = None
-        self.data_file_path: Optional[pathlib.Path] = None
 
 
 class FeedViewProcessor:
@@ -90,9 +77,14 @@ class FeedDataDownloader:
 
         producer = await self.__context.get_producer()
 
-        start_date = await self.get_start_date(feed_id)
-
         job.data_file_path = pathlib.Path(f'{self.__staging_path}/feed_{feed_id}.jsonl.gz')
+        staging_file_info_path = pathlib.Path(f'{self.__staging_path}/feed_{feed_id}_info.json')
+
+        try:
+            with open(staging_file_info_path) as fp:
+                staging_file_info = json.load(fp)
+        except FileNotFoundError:
+            staging_file_info = dict()
 
         try:
             download_event = self.__current_feed_downloads[feed_id]
@@ -111,7 +103,19 @@ class FeedDataDownloader:
 
             self.__current_feed_downloads[feed_id] = asyncio.Event()
             download_event = self.__current_feed_downloads[feed_id]
-            with gzip.open(job.data_file_path, 'wt') as output_file:
+            try:
+                start_date = staging_file_info['most_recent_date']  # Epoch in milliseconds
+                most_recent_date: Optional[datetime.datetime] = datetime.datetime.fromtimestamp(start_date / 1000)
+            except KeyError:
+                start_date = 0
+                most_recent_date = None
+
+            if start_date > 0:
+                open_mode = 'at'  # Append to file
+            else:
+                open_mode = 'wt'  # New file or overwrite
+
+            with gzip.open(job.data_file_path, open_mode) as output_file:
                 try:
                     while self.__context.stopping is False:
                         response = await producer.request(
@@ -134,8 +138,16 @@ class FeedDataDownloader:
                         skip += len(items)  # For next batch
                         for item in items:
                             # Download and save in staging area
+                            save_date = item['save_date'] / 1000  # To seconds
+                            save_date_ts = datetime.datetime.fromtimestamp(save_date)
                             await self.download_data_item_file(job, item, keys, output_file)
+                            if most_recent_date is None or most_recent_date < save_date_ts:
+                                most_recent_date = save_date_ts
 
+                        staging_file_info['most_recent_date'] = math.floor(most_recent_date.timestamp()*1000)
+
+                        with open(staging_file_info_path, 'wt') as fp:
+                            json.dump(staging_file_info, fp)
                 except asyncio.TimeoutError:
                     raise FeedDownloadException('Timeout on getFeedData')
                 finally:
@@ -179,10 +191,6 @@ class FeedDataDownloader:
 
         await asyncio.to_thread(json.dump, output_content, output_file)
         await asyncio.to_thread(output_file.write, '\n')  # Separator for JSONL
-
-    async def get_start_date(self, feed_id: str) -> int:
-        """ Returns the most recent data date from a current staging folder when it exists or 0 if not staged yet """
-        return 0
 
 
 class FeedViewProcessorWorker:
@@ -233,6 +241,8 @@ class FeedViewProcessorWorker:
             return
 
         # Process data and upload to database
+        data_processor = select_data_processor(job)
+        await data_processor.process()
 
         self.__logger.debug(f"{self.__worker_id} Finishing job")
 

@@ -1,5 +1,9 @@
 import datetime
+import pathlib
+
 from typing import Optional, TypedDict, Union
+
+from millegrilles_messages.messages.MessagesModule import MessageWrapper
 
 
 class AttachedFile(TypedDict):
@@ -141,3 +145,17 @@ class Filehost:
         filehost.deleted = False
         filehost.sync_active = True
         return filehost
+
+
+class ProcessJob:
+
+    def __init__(self, message: MessageWrapper):
+        self.message = message
+        self.feed: Optional[dict] = None
+        self.view: Optional[dict] = None
+        self.decrypted_view_information: Optional[dict] = None
+        self.encryption_key_id: Optional[str] = None
+        self.encryption_key_str: Optional[str] = None
+        self.encryption_key: Optional[bytes] = None
+        self.data_file_path: Optional[pathlib.Path] = None
+
