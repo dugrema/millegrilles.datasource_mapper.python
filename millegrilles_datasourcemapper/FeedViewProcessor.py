@@ -1,10 +1,16 @@
 import asyncio
+import binascii
+import datetime
 import logging
 import json
+import gzip
+import math
+import pathlib
+import struct
 import tempfile
 import zlib
 
-from typing import Optional
+from typing import Optional, Union
 
 from millegrilles_datasourcemapper.Util import decode_base64_nopad
 from millegrilles_messages.chiffrage.DechiffrageUtils import dechiffrer_document, dechiffrer_reponse, \
@@ -24,6 +30,8 @@ class ProcessJob:
         self.encryption_key_id: Optional[str] = None
         self.encryption_key_str: Optional[str] = None
         self.encryption_key: Optional[bytes] = None
+        self.data_file_path: Optional[pathlib.Path] = None
+
 
 class FeedViewProcessor:
 
@@ -32,7 +40,9 @@ class FeedViewProcessor:
         self.__context = context
         self.__process_queue: asyncio.Queue[Optional[ProcessJob]] = asyncio.Queue(maxsize=1)
         self.__workers: list[FeedViewProcessorWorker] = list()
-        self.__feed_data_downloader = FeedDataDownloader(context)
+
+        self.__staging_feeds_path = pathlib.Path(f'{self.__context.configuration.dir_data}/feeds')
+        self.__feed_data_downloader = FeedDataDownloader(context, self.__staging_feeds_path)
 
     async def run(self):
         async with asyncio.TaskGroup() as group:
@@ -52,6 +62,7 @@ class FeedViewProcessor:
                 pass
 
     async def setup(self):
+        self.__staging_feeds_path.mkdir(parents=True, exist_ok=True)
         num_workers = 2
         for i in range(0, num_workers):
             self.__workers.append(FeedViewProcessorWorker(self.__context, self.__feed_data_downloader, self.__process_queue, worker_id=str(i)))
@@ -66,10 +77,11 @@ class FeedDataDownloader:
     Downloads and decrypts feed data into a staging area.
     """
 
-    def __init__(self, context: DatasourceMapperContext, threads=1):
+    def __init__(self, context: DatasourceMapperContext, staging_path: pathlib.Path, threads=1):
         self.__context = context
-        self.__semaphore = asyncio.BoundedSemaphore(threads)
+        self.__staging_path = staging_path
 
+        self.__semaphore = asyncio.BoundedSemaphore(threads)
         self.__current_feed_downloads: dict[str, asyncio.Event] = dict()
 
     async def download_feed_data(self, job: ProcessJob):
@@ -79,6 +91,8 @@ class FeedDataDownloader:
         producer = await self.__context.get_producer()
 
         start_date = await self.get_start_date(feed_id)
+
+        job.data_file_path = pathlib.Path(f'{self.__staging_path}/feed_{feed_id}.jsonl.gz')
 
         try:
             download_event = self.__current_feed_downloads[feed_id]
@@ -97,36 +111,39 @@ class FeedDataDownloader:
 
             self.__current_feed_downloads[feed_id] = asyncio.Event()
             download_event = self.__current_feed_downloads[feed_id]
-            try:
-                while self.__context.stopping is False:
-                    response = await producer.request(
-                        {"feed_id": feed_id, "feed_view_id": feed_view_id, "batch_start": start_date, "limit": limit, "skip": skip},
-                        "DataCollector", "getFeedData", Constantes.SECURITE_PROTEGE)
+            with gzip.open(job.data_file_path, 'wt') as output_file:
+                try:
+                    while self.__context.stopping is False:
+                        response = await producer.request(
+                            {"feed_id": feed_id, "feed_view_id": feed_view_id, "batch_start": start_date, "limit": limit, "skip": skip},
+                            "DataCollector", "getFeedData", Constantes.SECURITE_PROTEGE)
 
-                    if response.parsed['ok'] is not True:
-                        raise FeedDownloadException(
-                            f'Error received when fetching next batch (code: {response.parsed.get('code')}: {response.parsed.get('err')})')
+                        if response.parsed['ok'] is not True:
+                            raise FeedDownloadException(
+                                f'Error received when fetching next batch (code: {response.parsed.get('code')}: {response.parsed.get('err')})')
 
-                    items: list = response.parsed['items']
-                    if len(items) == 0:
-                        break  # Done
+                        items: list = response.parsed['items']
+                        if len(items) == 0:
+                            break  # Done
 
-                    decrypted_keys_message = dechiffrer_reponse(self.__context.signing_key, response.parsed['keys'])
-                    keys: dict[str, bytes] = dict()
-                    for key in decrypted_keys_message['cles']:
-                        keys[key['cle_id']] = decode_base64_nopad(key['cle_secrete_base64'])
+                        decrypted_keys_message = dechiffrer_reponse(self.__context.signing_key, response.parsed['keys'])
+                        keys: dict[str, bytes] = dict()
+                        for key in decrypted_keys_message['cles']:
+                            keys[key['cle_id']] = decode_base64_nopad(key['cle_secrete_base64'])
 
-                    skip += len(items)  # For next batch
-                    for item in items:
-                        await self.download_data_item_file(job, item, keys)
-            except asyncio.TimeoutError:
-                raise FeedDownloadException('Timeout on getFeedData')
-            finally:
-                # Releasse waiting threads
-                download_event.set()
-                del self.__current_feed_downloads[feed_id]
+                        skip += len(items)  # For next batch
+                        for item in items:
+                            # Download and save in staging area
+                            await self.download_data_item_file(job, item, keys, output_file)
 
-    async def download_data_item_file(self, job: ProcessJob, item: dict, keys: dict[str, bytes]):
+                except asyncio.TimeoutError:
+                    raise FeedDownloadException('Timeout on getFeedData')
+                finally:
+                    # Releasse waiting threads
+                    download_event.set()
+                    del self.__current_feed_downloads[feed_id]
+
+    async def download_data_item_file(self, job: ProcessJob, item: dict, keys: dict[str, bytes], output_file) -> (dict, Optional[dict]):
         fuuid = item['data_fuuid']
         with tempfile.TemporaryFile('wb+') as temp_file:
             await self.__context.file_handler.download_file(fuuid, temp_file)
@@ -142,14 +159,15 @@ class FeedDataDownloader:
         data_key_id = encrypted_data['cle_id']
         data_key = keys[data_key_id]
         decrypted_data = dechiffrer_bytes_secrete(data_key, encrypted_data)
-
-        files_map = dict()
-        files_list = file_content.get('files')
-        if files_list:
-            for file in files_list:
-                files_map[file['fuuid']] = file
+        output_content: dict[str, Union[str, dict]] = {'data': decrypted_data.decode('utf-8')}
 
         if encrypted_files_map:
+            files_map = dict()
+            files_list = file_content.get('files')
+            if files_list:
+                for file in files_list:
+                    files_map[file['fuuid']] = file
+
             files_key_id = encrypted_files_map['cle_id']
             files_key = keys[files_key_id]
             decrypted_files_map_str = dechiffrer_bytes_secrete(files_key, encrypted_files_map).decode('utf-8')
@@ -157,7 +175,10 @@ class FeedDataDownloader:
             for (file_path, fuuid) in decrypted_files_map.items():
                 files_map[fuuid]['path'] = file_path
 
-        pass
+            output_content['files'] = files_map
+
+        await asyncio.to_thread(json.dump, output_content, output_file)
+        await asyncio.to_thread(output_file.write, '\n')  # Separator for JSONL
 
     async def get_start_date(self, feed_id: str) -> int:
         """ Returns the most recent data date from a current staging folder when it exists or 0 if not staged yet """
