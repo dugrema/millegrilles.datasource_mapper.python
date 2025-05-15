@@ -10,7 +10,7 @@ from millegrilles_datasourcemapper.DataStructures import AttachedFileInterface
 LOGGER = logging.getLogger(__name__)
 
 
-class WebScraperContext(MilleGrillesBusContext):
+class DatasourceMapperContext(MilleGrillesBusContext):
 
     def __init__(self, configuration: DatasourceMapperConfiguration):
         super().__init__(configuration)

@@ -5,13 +5,15 @@ import logging
 import tempfile
 
 from asyncio import TaskGroup
-from typing import Optional
+from typing import Optional, Union
 from urllib.parse import urljoin
 
+from millegrilles_messages.chiffrage.DechiffrageUtils import get_decipher_cle_secrete
 from millegrilles_messages.chiffrage.Mgs4 import CipherMgs4WithSecret
 from millegrilles_messages.messages import Constantes
-from millegrilles_datasourcemapper.Context import WebScraperContext
+from millegrilles_datasourcemapper.Context import DatasourceMapperContext
 from millegrilles_datasourcemapper.DataStructures import Filehost, AttachedFileInterface, AttachedFile
+from millegrilles_datasourcemapper.Util import decode_base64_nopad
 
 
 CONST_GET_FILE_READ_SOCK_TIMEOUT = 20       # Timeout if no data read after 20 seconds
@@ -20,7 +22,7 @@ MAX_UPLOAD_SIZE = 100_000_000
 
 class AttachedFileHelper(AttachedFileInterface):
 
-    def __init__(self, context: WebScraperContext):
+    def __init__(self, context: DatasourceMapperContext):
         self.__logger = logging.getLogger(__name__ + '.' + self.__class__.__name__)
         self.__context = context
         self.__filehost: Optional[Filehost] = None
@@ -171,6 +173,31 @@ class AttachedFileHelper(AttachedFileInterface):
                 await _upload_content(self.__session, self.__filehost_url, fuuid, file_size, tmp_output)
 
         return attached_file
+
+    async def download_decrypt_file(self, fuuid: str, decrypted_key: Union[str, bytes], decryption_params: dict, fp) -> int:
+        if isinstance(decrypted_key, str):
+            decrypted_key = decode_base64_nopad(decrypted_key)
+        decipher = get_decipher_cle_secrete(decrypted_key, decryption_params)
+
+        file_size = 0
+
+        session = self.__session
+        filehost_url = self.__filehost_url
+
+        url_fichier = urljoin(filehost_url, f'filehost/files/{fuuid}')
+        async with session.get(url_fichier) as resp:
+            resp.raise_for_status()
+
+            async for chunk in resp.content.iter_chunked(64*1024):
+                chunk = decipher.update(chunk)
+                await asyncio.to_thread(fp.write, chunk)
+                file_size += len(chunk)
+
+        chunk = decipher.finalize()
+        await asyncio.to_thread(fp.write, chunk)
+        file_size += len(chunk)
+
+        return file_size
 
 
 def _encrypt_file(cipher, src, dest):

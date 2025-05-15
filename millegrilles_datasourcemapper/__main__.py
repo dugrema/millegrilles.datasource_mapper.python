@@ -4,12 +4,14 @@ from asyncio import TaskGroup
 from collections.abc import Awaitable
 from concurrent.futures.thread import ThreadPoolExecutor
 
+from millegrilles_datasourcemapper.BusMessageHandler import BusMessageHandler
 from millegrilles_datasourcemapper.DataSourceManager import DatasourceManager
+from millegrilles_datasourcemapper.FeedViewProcessor import FeedViewProcessor
 from millegrilles_messages.bus.BusContext import StopListener, ForceTerminateExecution
 from millegrilles_messages.bus.PikaConnector import MilleGrillesPikaConnector
 
 from millegrilles_datasourcemapper.Configuration import DatasourceMapperConfiguration
-from millegrilles_datasourcemapper.Context import WebScraperContext
+from millegrilles_datasourcemapper.Context import DatasourceMapperContext
 from millegrilles_datasourcemapper.AttachedFileHelper import AttachedFileHelper
 
 LOGGER = logging.getLogger(__name__)
@@ -22,7 +24,7 @@ async def force_terminate_task_group():
 
 async def main():
     config = DatasourceMapperConfiguration.load()
-    context = WebScraperContext(config)
+    context = DatasourceMapperContext(config)
 
     LOGGER.setLevel(logging.INFO)
     LOGGER.info("Starting")
@@ -46,7 +48,7 @@ async def main():
         pass  # Result of the termination task
 
 
-async def wiring(context: WebScraperContext) -> list[Awaitable]:
+async def wiring(context: DatasourceMapperContext) -> list[Awaitable]:
     # Some threads get used to handle sync events for the duration of the execution. Ensure there are enough.
     loop = asyncio.get_event_loop()
     loop.set_default_executor(ThreadPoolExecutor(max_workers=10))
@@ -54,11 +56,17 @@ async def wiring(context: WebScraperContext) -> list[Awaitable]:
     # Create instances
     bus_connector = MilleGrillesPikaConnector(context)
     context.bus_connector = bus_connector
-    feed_manager = DatasourceManager(context)
+    feed_view_processor = FeedViewProcessor(context)
+    feed_manager = DatasourceManager(context, feed_view_processor)
+    bus_handler = BusMessageHandler(context, feed_manager)
     attached_file_helper = AttachedFileHelper(context)
 
     # Additional wiring
     context.file_handler = attached_file_helper
+
+    # Setup
+    await bus_handler.setup()
+    await feed_view_processor.setup()
 
     # Create tasks
     coros = [
@@ -66,6 +74,7 @@ async def wiring(context: WebScraperContext) -> list[Awaitable]:
         bus_connector.run(),
         feed_manager.run(),
         attached_file_helper.run(),
+        feed_view_processor.run(),
     ]
 
     return coros
