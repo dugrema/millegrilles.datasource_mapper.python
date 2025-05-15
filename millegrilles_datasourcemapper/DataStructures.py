@@ -1,5 +1,5 @@
 import datetime
-from typing import Optional, TypedDict
+from typing import Optional, TypedDict, Union
 
 
 class AttachedFile(TypedDict):
@@ -21,6 +21,25 @@ class AttachedFileInterface:
         """
         raise NotImplementedError('interface method - must override')
 
+    async def download_file(self, fuuid: str, fp) -> int:
+        """
+        Downloads a file without decrypting it.
+        :param fuuid:
+        :param fp:
+        :return:
+        """
+        raise NotImplementedError('interface method - must override')
+
+    async def download_decrypt_file(self, fuuid: str, decrypted_key: Union[str, bytes], decryption_params: dict, fp) -> int:
+        """
+        Downloads and decrypts a file.
+        :param fuuid:
+        :param decrypted_key:
+        :param decryption_params:
+        :param fp:
+        :return:
+        """
+        raise NotImplementedError('interface method - must override')
 
 class AttachedFileCorrelation:
 

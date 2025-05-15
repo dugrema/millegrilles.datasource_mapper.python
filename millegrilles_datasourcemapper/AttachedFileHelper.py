@@ -174,6 +174,21 @@ class AttachedFileHelper(AttachedFileInterface):
 
         return attached_file
 
+    async def download_file(self, fuuid: str, fp) -> int:
+        session = self.__session
+        filehost_url = self.__filehost_url
+        url_fichier = urljoin(filehost_url, f'filehost/files/{fuuid}')
+        async with session.get(url_fichier) as resp:
+            resp.raise_for_status()
+
+            file_size = 0
+            async for chunk in resp.content.iter_chunked(64*1024):
+                await asyncio.to_thread(fp.write, chunk)
+                file_size += len(chunk)
+
+        return file_size
+
+
     async def download_decrypt_file(self, fuuid: str, decrypted_key: Union[str, bytes], decryption_params: dict, fp) -> int:
         if isinstance(decrypted_key, str):
             decrypted_key = decode_base64_nopad(decrypted_key)
