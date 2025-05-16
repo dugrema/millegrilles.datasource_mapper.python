@@ -160,3 +160,17 @@ class ProcessJob:
         self.encryption_key: Optional[bytes] = None
         self.data_file_path: Optional[pathlib.Path] = None
 
+    def __copy__(self):
+        job = ProcessJob(self.message)
+        job.reset = self.reset
+        job.feed = self.feed
+        job.view = self.view
+        job.decrypted_view_information = self.decrypted_view_information
+        job.encryption_key_id = self.encryption_key_id
+        job.encryption_key_str = self.encryption_key_str
+        job.encryption_key = self.encryption_key
+        job.data_file_path = self.data_file_path
+        return job
+
+    def copy(self):
+        return self.__copy__()

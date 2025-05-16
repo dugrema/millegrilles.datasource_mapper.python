@@ -46,9 +46,9 @@ class DatasourceManager:
     async def __maintain_staging(self):
         self.__logger.warning("TODO - maintain staging")
 
-    async def process_feed_view(self, message: MessageWrapper):
+    async def process_feed_view(self, message: MessageWrapper, reset_staging=False):
         try:
-            await self.__feed_view_processor.add_to_queue(message, reset_staging=True)
+            await self.__feed_view_processor.add_to_queue(message, reset_staging=reset_staging)
             return {'ok': True}
         except asyncio.QueueFull:
             return {'ok': False, 'code': 1, 'err': 'Processing queue full'}

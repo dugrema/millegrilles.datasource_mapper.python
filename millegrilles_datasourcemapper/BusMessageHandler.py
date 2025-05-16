@@ -6,6 +6,7 @@ from cryptography.x509 import ExtensionNotFound
 
 from millegrilles_datasourcemapper.Context import DatasourceMapperContext
 from millegrilles_datasourcemapper.DataSourceManager import DatasourceManager
+from millegrilles_messages.messages.Constantes import KIND_EVENEMENT
 from millegrilles_messages.messages.MessagesModule import MessageWrapper
 from millegrilles_messages.messages import Constantes
 from millegrilles_messages.bus.BusContext import MilleGrillesBusContext
@@ -60,7 +61,9 @@ class BusMessageHandler:
 
 
     async def on_volatile_message(self, message: MessageWrapper) -> Optional[dict]:
-        # Authorization check - 3.protege/CoreTopologie
+        message_kind = message.kind
+
+        # Authorization check - 3.protege/DataCollector
         enveloppe = message.certificat
         try:
             domaines = enveloppe.get_domaines
@@ -70,22 +73,16 @@ class BusMessageHandler:
             exchanges = enveloppe.get_exchanges
         except ExtensionNotFound:
             exchanges = list()
-        try:
-            delegation_globale = enveloppe.get_delegation_globale
-        except ExtensionNotFound:
-            delegation_globale = None
-
-        # if delegation_globale == Constantes.DELEGATION_GLOBALE_PROPRIETAIRE:
-        #     pass  # Owner/admin
-        # else:
-        #     return  # Ignore message
 
         action = message.routage['action']
-        payload = message.parsed
 
         try:
-            if action == 'processFeedView':
-                return await self.__datasource_manager.process_feed_view(message)
+            if message_kind == Constantes.KIND_COMMANDE:
+                if 'DataCollector' in domaines and Constantes.SECURITE_PROTEGE in exchanges and action == 'processFeedView':
+                    return await self.__datasource_manager.process_feed_view(message, True)
+            elif message_kind == Constantes.KIND_EVENEMENT:
+                if 'DataCollector' in domaines and Constantes.SECURITE_PROTEGE in exchanges and action == 'feedDataUpdated':
+                    return await self.__datasource_manager.process_feed_view(message, False)
         except Exception as e:
             # Unhandled error
             self.__logger.exception('Unhandled exception')

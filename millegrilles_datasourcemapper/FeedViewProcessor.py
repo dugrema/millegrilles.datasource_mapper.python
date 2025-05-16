@@ -61,6 +61,15 @@ class FeedViewProcessor:
             job.reset = True
         self.__process_queue.put_nowait(job)
 
+    async def add_updates_to_queue(self, message: MessageWrapper):
+        job = ProcessJob(message)
+        try:
+            self.__process_queue.put_nowait(job)
+        except asyncio.QueueFull:
+            # Queue full, ignore this trigger event
+            return
+
+
 
 class FeedDataDownloader:
     """
@@ -80,8 +89,8 @@ class FeedDataDownloader:
 
         producer = await self.__context.get_producer()
 
-        job.data_file_path = pathlib.Path(f'{self.__staging_path}/feed_{feed_id}.jsonl.gz')
-        staging_file_info_path = pathlib.Path(f'{self.__staging_path}/feed_{feed_id}_info.json')
+        job.data_file_path = pathlib.Path(f'{self.__staging_path}/feedview_{feed_view_id}.jsonl.gz')
+        staging_file_info_path = pathlib.Path(f'{self.__staging_path}/feedview_{feed_view_id}_info.json')
 
         # Load staging state
         staging_file_info = dict()
@@ -246,39 +255,44 @@ class FeedViewProcessorWorker:
         self.__logger.debug(f"{self.__worker_id} Starting job")
 
         # Load feed/view metadata
+        # Potential to get multiple jobs back (one per feed view)
         try:
-            await self.get_feed_view_information()
+            jobs = await self.get_feed_view_information()
         except FeedPreparationException:
             self.__logger.exception("Error preparing feed")
             return
 
-        # Download data to staging
-        try:
-            await self.__data_downloader.download_feed_data(job)
-        except FeedDownloadException:
-            self.__logger.exception("Error when downloading feed data")
-            return
-
-        # Process data and upload to database
-        data_processor = select_data_processor(self.__context, job)
-        await data_processor.process()
-
-        # Cleanup - removing data but not the staging info file (allows incremental updates)
-        if job.data_file_path:
+        for job in jobs:
+            # Download data to staging
             try:
-                os.unlink(job.data_file_path)
-            except FileNotFoundError:
-                pass
+                await self.__data_downloader.download_feed_data(job)
+            except FeedDownloadException:
+                self.__logger.exception("Error when downloading feed data")
+                return
+
+            # Process data and upload to database
+            data_processor = select_data_processor(self.__context, job)
+            await data_processor.process()
+
+            # Cleanup - removing data but not the staging info file (allows incremental updates)
+            if job.data_file_path:
+                try:
+                    os.unlink(job.data_file_path)
+                except FileNotFoundError:
+                    pass
 
         self.__logger.debug(f"{self.__worker_id} Finishing job")
 
-    async def get_feed_view_information(self):
+    async def get_feed_view_information(self) -> list[ProcessJob]:
         job = self.__current_job
         feed_id = job.message.parsed['feed_id']
-        feed_view_id = job.message.parsed['feed_view_id']
+        try:
+            feed_view_ids = job.message.parsed['feed_view_ids']
+        except KeyError:
+            feed_view_ids = [job.message.parsed['feed_view_id']]
         producer = await self.__context.get_producer()
 
-        feed_response = await producer.request({'feed_id': feed_id, 'feed_view_id': feed_view_id}, "DataCollector", "getFeedViews", Constantes.SECURITE_PRIVE)
+        feed_response = await producer.request({'feed_id': feed_id, 'feed_view_ids': feed_view_ids}, "DataCollector", "getFeedViews", Constantes.SECURITE_PRIVE)
         try:
             if feed_response.parsed['ok'] is not True:
                 raise FeedPreparationException(f"Error loading feed view information (code: {feed_response.parsed.get('code')}): {feed_response.parsed.get('err')}")
@@ -290,19 +304,26 @@ class FeedViewProcessorWorker:
         try:
             # Inject feed view information into the job
             job.feed = feed_response.parsed['feed']
-            job.view = feed_response.parsed['views'][0]
+            jobs = list()
 
-            # Decrypt the view key
-            job.encryption_key_id = job.view['encrypted_data']['cle_id']
-            decrypted_keys_message = dechiffrer_reponse(self.__context.signing_key, feed_response.parsed['keys'])
-            decrypted_keys = decrypted_keys_message['cles']
-            decrypted_key_info = [k for k in decrypted_keys if k['cle_id'] == job.encryption_key_id].pop()
-            job.encryption_key_str = decrypted_key_info['cle_secrete_base64']
-            job.encryption_key = decode_base64_nopad(job.encryption_key_str)
+            view_job = job.copy()
+            for view in feed_response.parsed['views']:
+                view_job.view = view
 
-            # Decrypt feed view information to test key
-            decrypted_view = dechiffrer_bytes_secrete(job.encryption_key, job.view['encrypted_data'])
-            job.decrypted_view_information = json.loads(decrypted_view)
+                # Decrypt the view key
+                view_job.encryption_key_id = view_job.view['encrypted_data']['cle_id']
+                decrypted_keys_message = dechiffrer_reponse(self.__context.signing_key, feed_response.parsed['keys'])
+                decrypted_keys = decrypted_keys_message['cles']
+                decrypted_key_info = [k for k in decrypted_keys if k['cle_id'] == view_job.encryption_key_id].pop()
+                view_job.encryption_key_str = decrypted_key_info['cle_secrete_base64']
+                view_job.encryption_key = decode_base64_nopad(view_job.encryption_key_str)
+
+                # Decrypt feed view information to test key
+                decrypted_view = dechiffrer_bytes_secrete(view_job.encryption_key, view_job.view['encrypted_data'])
+                view_job.decrypted_view_information = json.loads(decrypted_view)
+                jobs.append(view_job)
+
+            return jobs
         except (IndexError, KeyError, ValueError) as e:
             raise FeedPreparationException("Error preparing job", e)
 
