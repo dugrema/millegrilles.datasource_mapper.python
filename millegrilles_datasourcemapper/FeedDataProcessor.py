@@ -47,17 +47,19 @@ class FeedViewDataProcessorPythonCustom(FeedViewDataProcessor):
 
     async def process(self):
         self.__logger.debug("Processing data")
-        count = 0
+        count_item = 0
+        count_sub_item = 0
 
         batch: list[dict] = list()
         async for data_item in self.read_data_items():
-            count += 1
+            count_item += 1
             async for parsed_item in parse_google_trends(data_item.data):
+                count_sub_item += 1
                 prepared_item = parsed_item.produce_data(self._job, data_item.files)
                 batch.append(prepared_item)
                 if len(batch) >= 20:
                     truncate = False
-                    if count == 1 and self._job.reset:
+                    if count_item == 1 and self._job.reset:
                         # Truncate on first batch only
                         truncate = True
                     await self.send_batch(batch, truncate)
@@ -66,7 +68,7 @@ class FeedViewDataProcessorPythonCustom(FeedViewDataProcessor):
         if len(batch) > 0:
             await self.send_batch(batch, False)
 
-        self.__logger.debug(f"Parsed through {count} data items")
+        self.__logger.info(f"Parsed through {count_item} data items and {count_sub_item} sub-items for feed_view {self._job.view['feed_view_id']}")
 
     async def send_batch(self, batch: list, truncate: False):
         producer = await self._context.get_producer()

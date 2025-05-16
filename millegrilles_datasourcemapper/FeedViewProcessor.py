@@ -263,6 +263,7 @@ class FeedViewProcessorWorker:
 
         for job in jobs:
             # Download data to staging
+            self.__logger.info(f"Running job on feed_view_id {job.view['feed_view_id']}")
             try:
                 await self.__data_downloader.download_feed_data(job)
             except FeedDownloadException:
