@@ -118,5 +118,6 @@ def create_volatile_channel(context: MilleGrillesBusContext, on_message: Callabl
                                               arguments={'x-message-ttl': 30000}, allow_user_messages=True)
     channel.add_queue(queue)
     queue.add_routing_key(RoutingKey(Constantes.SECURITE_PROTEGE, 'commande.datasource_mapper.processFeedView'))
+    queue.add_routing_key(RoutingKey(Constantes.SECURITE_PROTEGE, 'evenement.DataCollector.feedDataUpdated'))
 
     return channel
