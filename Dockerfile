@@ -8,7 +8,9 @@ ARG VBUILD=2025.3.0
 #    PIP_NO_INDEX=true
 COPY requirements.txt $BUILD_FOLDER/requirements.txt
 
-RUN pip3 install --no-cache-dir -r $BUILD_FOLDER/requirements.txt
+RUN mkdir /var/opt/millegrilles/datasource_mapper && \
+    chown 984:980 /var/opt/millegrilles/datasource_mapper && \
+    pip3 install --no-cache-dir -r $BUILD_FOLDER/requirements.txt
 
 FROM stage1
 
