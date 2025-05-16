@@ -16,7 +16,8 @@ FROM stage1
 
 ENV CERT_PEM=/run/secrets/cert.pem \
     KEY_PEM=/run/secrets/key.pem \
-    CA_PEM=/run/secrets/pki.millegrille.cert
+    CA_PEM=/run/secrets/pki.millegrille.cert \
+    DIR_DATA=/var/opt/millegrilles/datasource_mapper
 
 # Creer repertoire app, copier fichiers
 COPY . $BUILD_FOLDER
@@ -27,5 +28,7 @@ RUN cd $BUILD_FOLDER/ && \
 # UID fichiers = 984
 # GID millegrilles = 980
 USER 984:980
+
+VOLUME /var/opt/millegrilles/datasource_mapper
 
 CMD ["-m", "millegrilles_datasourcemapper"]
