@@ -176,16 +176,19 @@ class FeedDataDownloader:
         if encrypted_files_map:
             files_map = dict()
             files_list = file_content.get('files')
-            if files_list:
-                for file in files_list:
-                    files_map[file['fuuid']] = file
 
             files_key_id = encrypted_files_map['cle_id']
             files_key = keys[files_key_id]
             decrypted_files_map_str = dechiffrer_bytes_secrete(files_key, encrypted_files_map).decode('utf-8')
             decrypted_files_map = json.loads(decrypted_files_map_str)
             for (file_path, fuuid) in decrypted_files_map.items():
-                files_map[fuuid]['path'] = file_path
+                files_map[file_path] = {'fuuid': fuuid}
+                file_detail = [f for f in files_list if f['fuuid'] == fuuid].pop()
+                files_map[file_path].update(file_detail)
+
+            # if files_list:
+            #     for file in files_list:
+            #         files_map[file['fuuid']] = file
 
             output_content['files'] = files_map
 

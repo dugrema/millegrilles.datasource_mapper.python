@@ -80,7 +80,7 @@ class ScrapedGoogleTrendsNewsItem:
 
         if self.picture and files:
             try:
-                picture_info = [f for f in files.values() if f.get('path') == self.picture].pop()
+                picture_info = files[self.picture]
                 data_item['files'] = [{
                     'fuuid': picture_info['fuuid'],
                     'decryption': {
