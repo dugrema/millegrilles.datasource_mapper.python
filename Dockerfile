@@ -31,4 +31,4 @@ USER 984:980
 
 VOLUME /var/opt/millegrilles/datasource_mapper
 
-CMD ["-m", "millegrilles_datasourcemapper"]
+CMD ["-m", "millegrilles_datasourcemapper", "--verbose"]

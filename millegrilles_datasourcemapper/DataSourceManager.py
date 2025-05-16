@@ -48,7 +48,7 @@ class DatasourceManager:
 
     async def process_feed_view(self, message: MessageWrapper):
         try:
-            await self.__feed_view_processor.add_to_queue(message)
+            await self.__feed_view_processor.add_to_queue(message, reset_staging=True)
             return {'ok': True}
         except asyncio.QueueFull:
             return {'ok': False, 'code': 1, 'err': 'Processing queue full'}

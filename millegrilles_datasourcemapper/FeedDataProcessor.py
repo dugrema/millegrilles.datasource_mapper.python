@@ -56,7 +56,10 @@ class FeedViewDataProcessorPythonCustom(FeedViewDataProcessor):
                 prepared_item = parsed_item.produce_data(self._job, data_item.files)
                 batch.append(prepared_item)
                 if len(batch) >= 20:
-                    truncate = count == 1  # Truncate on first batch only
+                    truncate = False
+                    if count == 1 and self._job.reset:
+                        # Truncate on first batch only
+                        truncate = True
                     await self.send_batch(batch, truncate)
                     batch.clear()
 

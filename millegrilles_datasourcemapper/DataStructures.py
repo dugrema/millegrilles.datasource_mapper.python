@@ -151,6 +151,7 @@ class ProcessJob:
 
     def __init__(self, message: MessageWrapper):
         self.message = message
+        self.reset = False
         self.feed: Optional[dict] = None
         self.view: Optional[dict] = None
         self.decrypted_view_information: Optional[dict] = None

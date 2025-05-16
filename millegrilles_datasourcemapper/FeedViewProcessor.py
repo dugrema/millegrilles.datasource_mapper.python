@@ -4,6 +4,7 @@ import logging
 import json
 import gzip
 import math
+import os
 import pathlib
 import tempfile
 import zlib
@@ -54,8 +55,10 @@ class FeedViewProcessor:
         for i in range(0, num_workers):
             self.__workers.append(FeedViewProcessorWorker(self.__context, self.__feed_data_downloader, self.__process_queue, worker_id=str(i)))
 
-    async def add_to_queue(self, message: MessageWrapper):
+    async def add_to_queue(self, message: MessageWrapper, reset_staging=False):
         job = ProcessJob(message)
+        if reset_staging:
+            job.reset = True
         self.__process_queue.put_nowait(job)
 
 
@@ -80,11 +83,24 @@ class FeedDataDownloader:
         job.data_file_path = pathlib.Path(f'{self.__staging_path}/feed_{feed_id}.jsonl.gz')
         staging_file_info_path = pathlib.Path(f'{self.__staging_path}/feed_{feed_id}_info.json')
 
-        try:
-            with open(staging_file_info_path) as fp:
-                staging_file_info = json.load(fp)
-        except FileNotFoundError:
-            staging_file_info = dict()
+        # Load staging state
+        staging_file_info = dict()
+        if job.reset:
+            # Reset the local staging area
+            try:
+                os.unlink(job.data_file_path)
+            except FileNotFoundError:
+                pass
+            try:
+                os.unlink(staging_file_info_path)
+            except FileNotFoundError:
+                pass
+        else:
+            try:
+                with open(staging_file_info_path) as fp:
+                    staging_file_info = json.load(fp)
+            except FileNotFoundError:
+                pass
 
         try:
             download_event = self.__current_feed_downloads[feed_id]
@@ -246,6 +262,13 @@ class FeedViewProcessorWorker:
         # Process data and upload to database
         data_processor = select_data_processor(self.__context, job)
         await data_processor.process()
+
+        # Cleanup - removing data but not the staging info file (allows incremental updates)
+        if job.data_file_path:
+            try:
+                os.unlink(job.data_file_path)
+            except FileNotFoundError:
+                pass
 
         self.__logger.debug(f"{self.__worker_id} Finishing job")
 
