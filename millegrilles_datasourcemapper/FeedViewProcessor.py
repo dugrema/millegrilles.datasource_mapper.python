@@ -241,7 +241,7 @@ class FeedViewProcessorWorker:
             return
 
         # Process data and upload to database
-        data_processor = select_data_processor(job)
+        data_processor = select_data_processor(self.__context, job)
         await data_processor.process()
 
         self.__logger.debug(f"{self.__worker_id} Finishing job")
