@@ -1,10 +1,11 @@
 import tempfile
+
+from collections.abc import AsyncIterable
 from xml.etree import ElementTree as ET
 
 from millegrilles_datasourcemapper.DataParserUtilities import GroupedDatedItemData, GroupData, parse_date
 
-
-async def parse_google_trends(data: str):
+async def parse(data: str) -> AsyncIterable[GroupedDatedItemData]:
     with tempfile.TemporaryFile('wt+') as temp_file:
         temp_file.write(data)
         temp_file.seek(0)

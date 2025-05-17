@@ -3,7 +3,9 @@ import logging
 import json
 import gzip
 
-from millegrilles_datasourcemapper.DataParserGoogleTrends import parse_google_trends
+from typing import AsyncIterable, Optional
+
+from millegrilles_datasourcemapper.mappers.DataParserGoogleTrends import parse as parse_google_trends
 from millegrilles_messages.chiffrage.Mgs4 import chiffrer_mgs4_bytes_secrete
 from millegrilles_messages.messages import Constantes
 from millegrilles_datasourcemapper.Context import DatasourceMapperContext
@@ -27,6 +29,7 @@ class FeedDataItem:
 class FeedViewDataProcessor:
 
     def __init__(self, context: DatasourceMapperContext, job: ProcessJob):
+        self.__logger = logging.getLogger(__name__ + '.' + self.__class__.__name__)
         self._context = context
         self._job = job
 
@@ -39,15 +42,6 @@ class FeedViewDataProcessor:
                 yield FeedDataItem.from_str(line)
 
     async def process(self):
-        raise NotImplementedError('must implement')
-
-class FeedViewDataProcessorPythonCustom(FeedViewDataProcessor):
-
-    def __init__(self, context: DatasourceMapperContext, job: ProcessJob):
-        super().__init__(context, job)
-        self.__logger = logging.getLogger(__name__ + '.' + self.__class__.__name__)
-
-    async def process(self):
         self.__logger.debug("Processing data")
         count_item = 0
         count_sub_item = 0
@@ -55,7 +49,7 @@ class FeedViewDataProcessorPythonCustom(FeedViewDataProcessor):
         batch: list[dict] = list()
         async for data_item in self.read_data_items():
             count_item += 1
-            async for parsed_item in parse_google_trends(data_item.data):
+            async for parsed_item in self.parse_data_items(data_item.data):
                 count_sub_item += 1
                 prepared_item = await self.produce_data_item(data_item, parsed_item)
                 batch.append(prepared_item)
@@ -125,10 +119,57 @@ class FeedViewDataProcessorPythonCustom(FeedViewDataProcessor):
         if response.parsed['ok'] is not True:
             raise Exception(f'Error saving batch: {response.parsed.get('err')}')
 
+    async def parse_data_items(self, feed_data_item: str) -> AsyncIterable[DatedItemData]:
+        raise NotImplementedError('must implement')
+
+
+class FeedViewDataProcessorGoogleTrends(FeedViewDataProcessor):
+
+    def __init__(self, context: DatasourceMapperContext, job: ProcessJob):
+        super().__init__(context, job)
+        self.__logger = logging.getLogger(__name__ + '.' + self.__class__.__name__)
+
+    async def parse_data_items(self, feed_data_item: str) -> AsyncIterable[DatedItemData]:
+        items = await parse_google_trends(feed_data_item)
+        for item in items:
+            yield item
+        # async for item in parse_google_trends(feed_data_item):
+        #     yield item
+
+
+class FeedViewDataProcessorPythonCustom(FeedViewDataProcessor):
+
+    def __init__(self, context: DatasourceMapperContext, job: ProcessJob):
+        super().__init__(context, job)
+        self.__logger = logging.getLogger(__name__ + '.' + self.__class__.__name__)
+        self.__processing_method: Optional = None
+
+    async def parse_data_items(self, feed_data_item: str):
+        custom_process: str = self._job.view['mapping_code']
+
+        try:
+            self.__processing_method = compile(custom_process, '<string>', 'exec')
+        except KeyError:
+            self.__processing_method = None
+        except Exception as e:
+            self.__logger.exception("Error parsing custom process")
+            self.__processing_method = None
+            raise e
+
+        values = {}  # Local context
+        exec(self.__processing_method, values)
+        async for item in  values['parse'](feed_data_item):
+            yield item
+
 
 def select_data_processor(context: DatasourceMapperContext, job: ProcessJob) -> FeedViewDataProcessor:
     feed_type = job.feed['feed_type']
+
     if feed_type == 'web.scraper.python_custom':
-        return FeedViewDataProcessorPythonCustom(context, job)
+        mapping_code = job.view.get('mapping_code')
+        if mapping_code is not None and mapping_code != '':
+            return FeedViewDataProcessorPythonCustom(context, job)
+        else:
+            return FeedViewDataProcessorGoogleTrends(context, job)
     else:
         raise Exception('Feed type not supported')
