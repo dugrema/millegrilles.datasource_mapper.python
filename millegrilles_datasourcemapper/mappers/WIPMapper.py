@@ -6,7 +6,7 @@ from millegrilles_datasourcemapper.DataParserUtilities import GroupedDatedItemDa
 
 async def parse(data: str) -> AsyncIterable[GroupedDatedItemData]:
     """
-    Parses the provided RSS feed data and yields GroupedDatedItemData objects.
+    Parses the provided RSS feed data and yields GroupedDatedItemData objects. 
     The function groups by <item> elements and then iterates over each <ht:news_item>
     within an item. For each news item, it extracts:
       - label from <ht:news_item_title>

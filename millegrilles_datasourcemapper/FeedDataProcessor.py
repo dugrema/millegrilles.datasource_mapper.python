@@ -5,7 +5,7 @@ import gzip
 
 from typing import AsyncIterable, Optional
 
-from millegrilles_datasourcemapper.mappers.DataParserGoogleTrends import parse as parse_google_trends
+from millegrilles_datasourcemapper.mappers.WIPMapper import parse as wip_parser
 from millegrilles_messages.chiffrage.Mgs4 import chiffrer_mgs4_bytes_secrete
 from millegrilles_messages.messages import Constantes
 from millegrilles_datasourcemapper.Context import DatasourceMapperContext
@@ -86,7 +86,7 @@ class FeedViewDataProcessor:
         # Check if we need to link a picture
         try:
             picture = [p[0] for p in item.associated_urls.items() if p[1] == 'picture'].pop()
-        except (TypeError, IndexError):
+        except (AttributeError, TypeError, IndexError):
             picture = None
 
         if picture and feed_item.files:
@@ -123,14 +123,14 @@ class FeedViewDataProcessor:
         raise NotImplementedError('must implement')
 
 
-class FeedViewDataProcessorGoogleTrends(FeedViewDataProcessor):
+class FeedViewDataProcessorWIP(FeedViewDataProcessor):
 
     def __init__(self, context: DatasourceMapperContext, job: ProcessJob):
         super().__init__(context, job)
         self.__logger = logging.getLogger(__name__ + '.' + self.__class__.__name__)
 
     async def parse_data_items(self, feed_data_item: str) -> AsyncIterable[DatedItemData]:
-        async for item in parse_google_trends(feed_data_item):
+        async for item in wip_parser(feed_data_item):
             yield item
 
 
@@ -167,6 +167,6 @@ def select_data_processor(context: DatasourceMapperContext, job: ProcessJob) -> 
         if mapping_code is not None and mapping_code != '':
             return FeedViewDataProcessorPythonCustom(context, job)
         else:
-            return FeedViewDataProcessorGoogleTrends(context, job)
+            return FeedViewDataProcessorWIP(context, job)
     else:
         raise Exception('Feed type not supported')
