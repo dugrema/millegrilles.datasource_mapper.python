@@ -3,9 +3,11 @@ import logging
 import json
 import gzip
 
+from millegrilles_messages.chiffrage.Mgs4 import chiffrer_mgs4_bytes_secrete
 from millegrilles_messages.messages import Constantes
 from millegrilles_datasourcemapper.Context import DatasourceMapperContext
-from millegrilles_datasourcemapper.DataParserSamples import parse_google_trends, ScrapedGoogleTrendsNewsItem
+from millegrilles_datasourcemapper.DataParserUtilities import parse_google_trends, \
+    DatedItemData, hash_to_id, GroupedDatedItemData
 from millegrilles_datasourcemapper.FeedViewProcessor import ProcessJob
 
 class FeedDataItem:
@@ -55,7 +57,7 @@ class FeedViewDataProcessorPythonCustom(FeedViewDataProcessor):
             count_item += 1
             async for parsed_item in parse_google_trends(data_item.data):
                 count_sub_item += 1
-                prepared_item = parsed_item.produce_data(self._job, data_item.files)
+                prepared_item = await self.produce_data_item(data_item, parsed_item)
                 batch.append(prepared_item)
                 if len(batch) >= 20:
                     truncate = False
@@ -69,6 +71,46 @@ class FeedViewDataProcessorPythonCustom(FeedViewDataProcessor):
             await self.send_batch(batch, False)
 
         self.__logger.info(f"Parsed through {count_item} data items and {count_sub_item} sub-items for feed_view {self._job.view['feed_view_id']}")
+
+    async def produce_data_item(self, feed_item: FeedDataItem, item: DatedItemData):
+        job = self._job
+        cleartext = item.get_cleartext()
+        encrypted_data = chiffrer_mgs4_bytes_secrete(job.encryption_key, json.dumps(cleartext))[1]
+        encrypted_data['cle_id'] = job.encryption_key_id
+
+        data_item = {
+            'data_id': item.data_id,
+            'feed_id': job.feed['feed_id'],
+            'feed_view_id': job.view['feed_view_id'],
+            'encrypted_data': encrypted_data,
+            'pub_date': item.date * 1000,   # Pub date in millisecs
+        }
+
+        if isinstance(item, GroupedDatedItemData):
+            data_item['group_id'] = hash_to_id(item.group)
+
+        # Check if we need to link a picture
+        try:
+            picture = [p[0] for p in item.associated_urls.items() if p[1] == 'picture'].pop()
+        except (TypeError, IndexError):
+            picture = None
+
+        if picture and feed_item.files:
+            try:
+                picture_info = feed_item.files[picture]
+                data_item['files'] = [{
+                    'fuuid': picture_info['fuuid'],
+                    'decryption': {
+                        'cle_id': picture_info['cle_id'],
+                        'format': picture_info['format'],
+                        'nonce': picture_info['nonce'],
+                        'compression': picture_info.get('compression'),
+                    },
+                }]
+            except (IndexError, KeyError):
+                pass  # No match
+
+        return data_item
 
     async def send_batch(self, batch: list, truncate: False):
         producer = await self._context.get_producer()
