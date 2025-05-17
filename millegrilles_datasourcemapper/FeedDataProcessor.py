@@ -3,11 +3,11 @@ import logging
 import json
 import gzip
 
+from millegrilles_datasourcemapper.DataParserGoogleTrends import parse_google_trends
 from millegrilles_messages.chiffrage.Mgs4 import chiffrer_mgs4_bytes_secrete
 from millegrilles_messages.messages import Constantes
 from millegrilles_datasourcemapper.Context import DatasourceMapperContext
-from millegrilles_datasourcemapper.DataParserUtilities import parse_google_trends, \
-    DatedItemData, hash_to_id, GroupedDatedItemData
+from millegrilles_datasourcemapper.DataParserUtilities import DatedItemData, hash_to_id, GroupedDatedItemData
 from millegrilles_datasourcemapper.FeedViewProcessor import ProcessJob
 
 class FeedDataItem:
