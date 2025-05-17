@@ -1,8 +1,7 @@
 import tempfile
-
-from collections.abc import AsyncIterable
 from xml.etree import ElementTree as ET
 
+from typing import AsyncIterable
 from millegrilles_datasourcemapper.DataParserUtilities import GroupedDatedItemData, GroupData, parse_date
 
 async def parse(data: str) -> AsyncIterable[GroupedDatedItemData]:

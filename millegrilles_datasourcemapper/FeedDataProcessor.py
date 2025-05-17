@@ -130,11 +130,8 @@ class FeedViewDataProcessorGoogleTrends(FeedViewDataProcessor):
         self.__logger = logging.getLogger(__name__ + '.' + self.__class__.__name__)
 
     async def parse_data_items(self, feed_data_item: str) -> AsyncIterable[DatedItemData]:
-        items = await parse_google_trends(feed_data_item)
-        for item in items:
+        async for item in parse_google_trends(feed_data_item):
             yield item
-        # async for item in parse_google_trends(feed_data_item):
-        #     yield item
 
 
 class FeedViewDataProcessorPythonCustom(FeedViewDataProcessor):
