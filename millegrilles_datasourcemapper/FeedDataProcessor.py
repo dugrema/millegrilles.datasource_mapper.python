@@ -46,6 +46,9 @@ class FeedViewDataProcessor:
         count_item = 0
         count_sub_item = 0
 
+        # Truncate on first batch only
+        truncate = self._job.reset
+
         batch: list[dict] = list()
         async for data_item in self.read_data_items():
             count_item += 1
@@ -54,15 +57,12 @@ class FeedViewDataProcessor:
                 prepared_item = await self.produce_data_item(data_item, parsed_item)
                 batch.append(prepared_item)
                 if len(batch) >= 20:
-                    truncate = False
-                    if count_item == 1 and self._job.reset:
-                        # Truncate on first batch only
-                        truncate = True
                     await self.send_batch(batch, truncate)
+                    truncate = False  # Reset truncation to keep batches
                     batch.clear()
 
         if len(batch) > 0:
-            await self.send_batch(batch, False)
+            await self.send_batch(batch, truncate)
 
         self.__logger.info(f"Parsed through {count_item} data items and {count_sub_item} sub-items for feed_view {self._job.view['feed_view_id']}")
 
