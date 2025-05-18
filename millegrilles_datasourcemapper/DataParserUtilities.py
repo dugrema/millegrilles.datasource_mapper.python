@@ -23,20 +23,23 @@ def hash_to_id(value: Union[str, dict, list]) -> str:
 class DatedItemData:
     """ Item with data associated to a specific date, for example a publication date. """
 
-    def __init__(self, label: str, date: int):
+    def __init__(self, label: str, date: int,
+                 data_str: Optional[dict[str, str]] = None,
+                 data_number: Optional[dict[str, Union[int, float]]] = None,
+                 associated_urls: Optional[dict[str, str]] = None):
         self.label = label
         """ Item label. This can be a title or short description """
 
         self.date = date
         """ Item date in epoch seconds, for example the publication date. """
 
-        self.data_str: Optional[dict[str, str]] = None
+        self.data_str = data_str
         """ Dict of string values """
 
-        self.data_number: Optional[dict[str, Union[int, float]]] = None
+        self.data_number = data_number
         """ Dict of number values """
 
-        self.associated_urls: Optional[dict[str, str]] = None
+        self.associated_urls = associated_urls
         """ 
         Dict of urls (dict key) found in the item with the type of the url content (dict value).
         Examples of url content type: main, article, picture, video, reference, footnote. 

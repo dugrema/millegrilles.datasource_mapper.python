@@ -106,7 +106,17 @@ class FeedViewDataProcessor:
 
         return data_item
 
-    async def send_batch(self, batch: list, truncate: False):
+    async def send_batch(self, batch: list[DatedItemData], truncate: False):
+        # Detect the type of data
+        item = batch[0]
+        action = 'insertViewData'
+        # if isinstance(item, GroupedDatedItemData):
+        #     action = 'insertViewGroupedDated'
+        # elif isinstance(item, DatedItemData):
+        #     action = 'insertViewDated'
+        # else:
+        #     raise TypeError("Data type %s not supported" % item.__class__.__name__)
+
         producer = await self._context.get_producer()
         command = {
             'feed_view_id': self._job.view['feed_view_id'],
@@ -115,7 +125,7 @@ class FeedViewDataProcessor:
             'truncate': truncate,
             'deduplicate': False,
         }
-        response = await producer.command(command, 'DataCollector', 'insertViewData', Constantes.SECURITE_PROTEGE)
+        response = await producer.command(command, 'DataCollector', action, Constantes.SECURITE_PROTEGE)
         if response.parsed['ok'] is not True:
             raise Exception(f'Error saving batch: {response.parsed.get('err')}')
 
