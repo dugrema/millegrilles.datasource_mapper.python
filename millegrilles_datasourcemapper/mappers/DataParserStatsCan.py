@@ -33,6 +33,9 @@ async def parse(data: str) -> AsyncIterable[DatedItemData]:
             div = title_elem.find('xhtml:div', ns)
             if div is not None and div.text:
                 label_text = div.text.strip()
+                for item in div:
+                    if item is not None and item.text:
+                        label_text += ' ' + item.text.strip()
             elif title_elem.text:
                 label_text = title_elem.text.strip()
 
@@ -64,6 +67,9 @@ async def parse(data: str) -> AsyncIterable[DatedItemData]:
             div_summary = summary_elem.find('xhtml:div', ns)
             if div_summary is not None and div_summary.text:
                 summary_text = div_summary.text.strip()
+                for item in div_summary:
+                    if item is not None and item.text:
+                        summary_text += ' ' + item.text.strip()
                 data_str["summary"] = summary_text
 
         # Create the DatedItemData object with mandatory label and date.
