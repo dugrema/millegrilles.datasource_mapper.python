@@ -53,11 +53,15 @@ async def parse(data: str) -> AsyncIterable[DatedItemData]:
 * Return the python code that includes the parse function. You may create additional functions when appropriate.
 * The parse function *must* be an async generator.
 * The parse function *must* have a loop around the yield of DatedItemData. DatedItemData *must* be the yielded value.
+* The code *must not* access the network or open ports. Do not use the libraries: requests or aiohttp.
 * You must make a first mapping attempt using the provided data sample.
 * When a parser is available for the input data type, use it for parsing rather than regular expressions.
 * When parsing XML, ensure namespaces are provided.
-* Prefer python3 built-in libraries unless otherwise instructed, with the exceptions of:
-  * use feedparser for RSS feeds.
+* Put all imports at the top of the code.
+* Prefer python3 built-in libraries unless otherwise instructed with the exception of these libraries already made available:
+  * feedparser for RSS feeds,
+  * bs4 when parsing HTML, 
+  * pytz for dates with timezones.
 * When non built-in libraries are required, add a comment listing the libraries to add to a requirements.txt file. 
 * The DatedItemData label and date attributes are mandatory. You must map the input file content to
   these attributes.
