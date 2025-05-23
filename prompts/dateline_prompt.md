@@ -78,3 +78,4 @@ Optional data:
 * When present in the input data, add the following keys to DatedItemData.data_str with values from data:
   summary, description, subject, keywords, snippet.
 * Do not include user comments or reviews.
+* Ensure that the code works properly even when all optional data is absent. 
