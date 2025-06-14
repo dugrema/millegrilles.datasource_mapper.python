@@ -1,6 +1,4 @@
-FROM docker.maple.maceroc.com:5000/millegrilles_messages_python:2025.2.99 as stage1
-
-ARG VBUILD=2025.3.0
+FROM registry.millegrilles.com/millegrilles/messages_python:2025.4.104 as stage1
 
 # Pour offline build
 #ENV PIP_FIND_LINKS=$BUILD_FOLDER/pip \
@@ -13,6 +11,8 @@ RUN mkdir -p /var/opt/millegrilles/datasource_mapper && \
     pip3 install --no-cache-dir -r $BUILD_FOLDER/requirements.txt
 
 FROM stage1
+
+ARG VBUILD=2025.4.0
 
 ENV CERT_PEM=/run/secrets/cert.pem \
     KEY_PEM=/run/secrets/key.pem \
