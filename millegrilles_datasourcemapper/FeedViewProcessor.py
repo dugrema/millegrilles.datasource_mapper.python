@@ -76,6 +76,7 @@ class FeedDataDownloader:
     """
 
     def __init__(self, context: DatasourceMapperContext, staging_path: pathlib.Path, threads=1):
+        self.__logger = logging.getLogger(__name__ + '.' + self.__class__.__name__)
         self.__context = context
         self.__staging_path = staging_path
 
@@ -164,25 +165,36 @@ class FeedDataDownloader:
                             # Download and save in staging area
                             save_date = item['save_date'] / 1000  # To seconds
                             save_date_ts = datetime.datetime.fromtimestamp(save_date)
-                            await self.download_data_item_file(job, item, keys, output_file)
-                            if most_recent_date is None or most_recent_date < save_date_ts:
-                                most_recent_date = save_date_ts
+                            try:
+                                await self.download_data_item_file(job, item, keys, output_file)
+                                if most_recent_date is None or most_recent_date < save_date_ts:
+                                    most_recent_date = save_date_ts
+                            except KeyError as ke:
+                                self.__logger.warning("Feed_id %s view %s unable to find data_item: %s", feed_id, feed_view_id, ke)
+                                continue
 
-                        staging_file_info['most_recent_date'] = math.floor(most_recent_date.timestamp()*1000)
-
-                        with open(staging_file_info_path, 'wt') as fp:
-                            json.dump(staging_file_info, fp)
+                        try:
+                            staging_file_info['most_recent_date'] = math.floor(most_recent_date.timestamp()*1000)
+                        except TypeError:
+                            self.__logger.warning("Unable to find a date for data items in feed_id %s, feed_view_id", feed_id, feed_view_id)
+                            raise FeedDownloadException('Unable to get feed dates')
+                        else:
+                            with open(staging_file_info_path, 'wt') as fp:
+                                json.dump(staging_file_info, fp)
                 except asyncio.TimeoutError:
                     raise FeedDownloadException('Timeout on getFeedData')
                 finally:
-                    # Releasse waiting threads
+                    # Release waiting threads
                     download_event.set()
                     del self.__current_feedview_downloads[feed_view_id]
 
     async def download_data_item_file(self, job: ProcessJob, item: dict, keys: dict[str, bytes], output_file) -> (dict, Optional[dict]):
         fuuid = item['data_fuuid']
         with tempfile.TemporaryFile('wb+') as temp_file:
-            await self.__context.file_handler.download_file(fuuid, temp_file)
+            try:
+                await self.__context.file_handler.download_file(fuuid, temp_file)
+            except AttributeError as ae:
+                raise FeedDownloadException('Error downloading file: %s' % ae)
             temp_file.seek(0)
             content = await asyncio.to_thread(zlib.decompress, temp_file.read())
             content = content.decode('utf-8')
