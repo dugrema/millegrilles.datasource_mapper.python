@@ -11,6 +11,8 @@ import zlib
 
 from typing import Optional, Union
 
+from aiohttp import ClientResponseError
+
 from millegrilles_datasourcemapper.DataStructures import ProcessJob
 from millegrilles_datasourcemapper.FeedDataProcessor import select_data_processor
 from millegrilles_datasourcemapper.Util import decode_base64_nopad
@@ -172,6 +174,13 @@ class FeedDataDownloader:
                             except KeyError as ke:
                                 self.__logger.warning("Feed_id %s view %s unable to find data_item: %s", feed_id, feed_view_id, ke)
                                 continue
+                            except ClientResponseError as cre:
+                                if cre.status == 404:
+                                    self.__logger.warning("Feed_id %s view %s unable to find data_item: %s (HTTP 404)", feed_id,
+                                                          feed_view_id, ke)
+                                    continue
+                                else:
+                                    raise cre
 
                         try:
                             staging_file_info['most_recent_date'] = math.floor(most_recent_date.timestamp()*1000)
