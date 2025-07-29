@@ -182,6 +182,10 @@ class FeedDataDownloader:
                                 else:
                                     raise cre
 
+                        if not most_recent_date:
+                            self.__logger.warning("Feed_id %s view %s no data for: %s (HTTP 404)", feed_id, feed_view_id)
+                            continue
+
                         try:
                             staging_file_info['most_recent_date'] = math.floor(most_recent_date.timestamp()*1000)
                         except TypeError:
