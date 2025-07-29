@@ -177,7 +177,7 @@ class FeedDataDownloader:
                             except ClientResponseError as cre:
                                 if cre.status == 404:
                                     self.__logger.warning("Feed_id %s view %s unable to find data_item: %s (HTTP 404)", feed_id,
-                                                          feed_view_id, ke)
+                                                          feed_view_id, cre)
                                     continue
                                 else:
                                     raise cre
