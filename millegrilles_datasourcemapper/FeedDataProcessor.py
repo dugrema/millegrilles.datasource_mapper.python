@@ -52,14 +52,17 @@ class FeedViewDataProcessor:
         batch: list[dict] = list()
         async for data_item in self.read_data_items():
             count_item += 1
-            async for parsed_item in self.parse_data_items(data_item.data):
-                count_sub_item += 1
-                prepared_item = await self.produce_data_item(data_item, parsed_item)
-                batch.append(prepared_item)
-                if len(batch) >= 20:
-                    await self.send_batch(batch, truncate)
-                    truncate = False  # Reset truncation to keep batches
-                    batch.clear()
+            try:
+                async for parsed_item in self.parse_data_items(data_item.data):
+                    count_sub_item += 1
+                    prepared_item = await self.produce_data_item(data_item, parsed_item)
+                    batch.append(prepared_item)
+                    if len(batch) >= 20:
+                        await self.send_batch(batch, truncate)
+                        truncate = False  # Reset truncation to keep batches
+                        batch.clear()
+            except FeedParsingException:
+                pass  # Already logged
 
         if len(batch) > 0:
             await self.send_batch(batch, truncate)
@@ -144,6 +147,10 @@ class FeedViewDataProcessorWIP(FeedViewDataProcessor):
             yield item
 
 
+class FeedParsingException(Exception):
+    pass
+
+
 class FeedViewDataProcessorPythonCustom(FeedViewDataProcessor):
 
     def __init__(self, context: DatasourceMapperContext, job: ProcessJob):
@@ -165,8 +172,12 @@ class FeedViewDataProcessorPythonCustom(FeedViewDataProcessor):
 
         values = {}  # Local context
         exec(self.__processing_method, values)
-        async for item in  values['parse'](feed_data_item):
-            yield item
+        try:
+            async for item in values['parse'](feed_data_item):
+                yield item
+        except Exception as e:
+            self.__logger.exception("Error parsing dataset for feed_id:%s", self._job.view.get('feed_id'))
+            raise FeedParsingException(str(e))
 
 
 def select_data_processor(context: DatasourceMapperContext, job: ProcessJob) -> FeedViewDataProcessor:
